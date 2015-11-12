@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Simple HTML5 Canvas demo</title>
+		<script>
+
+			// A polyfill for a String.Format equivalent that I found on StackOverflow.
+			// I made a few modifications, but nevertheless, it does the same thing.
+			if (!String.prototype.fmt)
+			{
+				String.prototype.fmt = function()
+				{
+					var args = arguments;
+					return this.replace(String.prototype.fmt.__regex, function(match, $$1)
+					{
+						var chosen = (+$$1 >= 0) ? args : String.prototype.fmt.__negatives;
+						$$1 = Math.abs($$1);
+						return typeof chosen[$$1] != "undefined" ? chosen[$$1] : match;
+					});
+				};
+				String.prototype.fmt.__regex = /\{(\-?\d+)\}/g;
+				String.prototype.fmt.__negatives = [undefined, '{', '}'];
+			}
+			// Overriding the default error handler just to show that it can be done.
+			// This is to assist in debugging scripts.
+			var oldOnError = onerror;
+			onerror = function (errMsg, scriptUrl, lineNumber, columnNumber, errObj)
+			{
+				// Build error message
+				var message = "Error triggered.\n\n";
+				message += "Error: {0}\n";
+				message += "URL of script: {1}\n";
+				message += "Line {2}, Column {3}";
+
+				// The polyfill we created earlier!
+				message = message.fmt(errMsg, scriptUrl, lineNumber, columnNumber);
+
+				console.log(message);
+				alert(message);				// Just in case if we forget to check the JS console :)
+
+				// Chain previous handler.  Basically "playing nice with others."
+				// Not really necessary here, but I'm just showing that it's possible.
+				if (oldOnError instanceof Function)
+				{
+					oldOnError(errMsg, scriptUrl, lineNumber, columnNumber, errObj);
+				}
+			};
+		</script>
+		<script src="https://code.jquery.com/jquery-1.11.1.min.js"></script>
+	</head>
+	<body>
+		<canvas id="mycanvas" width="640" height="240"></canvas>
+
+		<script>
+			var canvas = $("#mycanvas")[0];			// jQuery yields an array like object.
+			var context = canvas.getContext('2d');
+			$(canvas).css("background", "black");
+
+			var MAX = 500;
+			var INTERVAL_MS = 5;
+			var colorStops = {};
+
+			function rgb(r, g, b)
+			{
+				return "rgb({0}, {1}, {2})".fmt(r, g, b);
+			}
+
+			function sameIntensity(selector, val)
+			{
+				var _rgb = [0, 0, 0, 0, 0];	// This is to avoid writing if statements.
+
+				_rgb[selector & 1] = val;	// blue
+				_rgb[selector & 2] = val;	// green
+				_rgb[selector & 4] = val;	// red
+
+				return rgb(_rgb[4], _rgb[2], _rgb[1]);
+			}
+
+			// This creates and stores the information
+			// for the color stops.
+			var cssColorNames = [];
+			var red, green, blue;
+			for (var count = 1; count <= 7; count++)
+			{
+				for (var value = 0; value <= 255; value += 17)
+				{
+					cssColorNames.push(sameIntensity(count, value));
+				}
+			}
+			cssColorNames.forEach(function (v, i, a)
+			{
+				colorStops[v] = ~~(MAX / a.length) * i;
+			});
+
+			// Release original array for garbage collection.
+			cssColorNames = null;
+
+			setInterval(function ()
+			{
+				var gradient = context.createRadialGradient(320, 120, 0, 320, 120, 320);
+				context.fillStyle = gradient;
+				for (var key in colorStops)
+				{
+					colorStops[key] = (colorStops[key] + 1) % MAX;
+					gradient.addColorStop(colorStops[key] / MAX, key);
+				}
+				context.fillRect(20, 20, 600, 200);
+			}, INTERVAL_MS);
+		</script>
+	</body>
+</html>
