@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html>
 	<head>
@@ -21,6 +22,64 @@
 				String.prototype.fmt.__regex = /\{(\-?\d+)\}/g;
 				String.prototype.fmt.__negatives = [undefined, '{', '}'];
 			}
+
+			function setAndGetNumericProperty($this, propertyName, n, onChange)
+			{
+				if (n !== undefined)
+				{
+					$this[propertyName] = +n;
+					onChange.call($this);
+				}
+				return $this[propertyName];
+			}
+
+			function ConstrainedNumber(v, minval, maxval)
+			{
+				var temp;
+
+				minval = +(minval || 0);
+				maxval = +(maxval || 0xFFFFFFFF);
+
+				if (minval > maxval)
+				{
+					temp = minval;
+					minval = maxval;
+					maxval = minval;
+				}
+
+				var rangeLength = maxval - minval;
+
+				this.min         = function () { return      minval; };
+				this.max         = function () { return      maxval; };
+				this.rangeLength = function () { return rangeLength; };
+
+				this.__value = minval;			// Guarantee initial value in range.
+				this.val(v);
+			}
+
+			ConstrainedNumber.prototype.toString = function ()
+			{
+				return "" + this.val();
+			};
+
+			ConstrainedNumber.prototype.val = function (n)
+			{
+				if (n !== undefined)
+				{
+					n = +n;
+					if (this.isValidValue(n))
+					{
+						this.__value = n;
+					}
+				}
+				return this.__value;
+			};
+
+			ConstrainedNumber.prototype.isValidValue = function (n)
+			{
+				return this.min() <= n && n <= this.max();
+			};
+
 			// Overriding the default error handler just to show that it can be done.
 			// This is to assist in debugging scripts.
 			var oldOnError = onerror;
@@ -49,16 +108,23 @@
 		<script src="https://code.jquery.com/jquery-1.11.1.min.js"></script>
 	</head>
 	<body>
-		<canvas id="mycanvas" width="640" height="240"></canvas>
+		<canvas id="mycanvas" width="640" height="240" style="float: left"></canvas>
+		<form onsubmit="return false">
+			Step value: <input type="text" maxlength="3" size="3" id="txtNumber" name="txtNumber">
+			<button id="btnSetStep">change</button><br>
+			<button id="btnDecreaseStep">-</button>
+			<button id="btnIncreaseStep">+</button>
+		</form>
 
 		<script>
 			var canvas = $("#mycanvas")[0];			// jQuery yields an array like object.
 			var context = canvas.getContext('2d');
 			$(canvas).css("background", "black");
+			$(canvas).css("margin-right", "15px");
 
-			var MAX = 500;
-			var INTERVAL_MS = 5;
-			var colorStops = {};
+			var INTERVAL_MS = 1;
+			var UPDATE_STEP = 1;
+			var UPDATE_STEP = new ConstrainedNumber(1, 0, 128);
 
 			function rgb(r, g, b)
 			{
@@ -69,6 +135,8 @@
 			{
 				var _rgb = [0, 0, 0, 0, 0];	// This is to avoid writing if statements.
 
+				val = selector & 8 ? val | 0x80 : val & 0x7f;
+
 				_rgb[selector & 1] = val;	// blue
 				_rgb[selector & 2] = val;	// green
 				_rgb[selector & 4] = val;	// red
@@ -78,33 +146,75 @@
 
 			// This creates and stores the information
 			// for the color stops.
+			var colorStops = {};
 			var cssColorNames = [];
-			var red, green, blue;
-			for (var count = 1; count <= 7; count++)
+			var selectors = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+			for (var sIndex = 0; sIndex < selectors.length; sIndex++)
 			{
-				for (var value = 0; value <= 255; value += 17)
+				for (var ii = 0; ii < 128; ii += 4)
 				{
-					cssColorNames.push(sameIntensity(count, value));
+					cssColorNames.push(sameIntensity(selectors[sIndex], ii));
 				}
 			}
+			//cssColorNames.push("#000");
+			/**/
+			/**/
+			cssColorNames.reverse();
 			cssColorNames.forEach(function (v, i, a)
 			{
-				colorStops[v] = ~~(MAX / a.length) * i;
+				colorStops[v] = i;
 			});
 
 			// Release original array for garbage collection.
+			var MAX = cssColorNames.length;
 			cssColorNames = null;
 
+			function updateStatus()
+			{
+				$("#txtNumber").val(UPDATE_STEP);
+			}
+			updateStatus();
+
+			$("#btnDecreaseStep").click(function ()
+			{
+				UPDATE_STEP.val(UPDATE_STEP.val() - 1);
+				updateStatus();
+			});
+
+			$("#btnIncreaseStep").click(function ()
+			{
+				UPDATE_STEP.val(UPDATE_STEP.val() + 1);
+				updateStatus();
+			});
+
+			$("#btnSetStep").click(function ()
+			{
+				UPDATE_STEP.val($("#txtNumber").val());
+				updateStatus();
+			});
+
+			// Where the magic happens.
 			setInterval(function ()
 			{
-				var gradient = context.createRadialGradient(320, 120, 0, 320, 120, 320);
-				context.fillStyle = gradient;
-				for (var key in colorStops)
+				function updateColorStops(inc)
 				{
-					colorStops[key] = (colorStops[key] + 1) % MAX;
-					gradient.addColorStop(colorStops[key] / MAX, key);
+					if (inc)
+					{
+						var gradient = context.createRadialGradient(320, 120, 0, 320, 120, 320);
+						context.fillStyle = gradient;
+						for (var key in colorStops)
+						{
+							colorStops[key] = (colorStops[key] + inc) % MAX;
+							gradient.addColorStop(colorStops[key] / MAX, key);
+						}
+					}
 				}
-				context.fillRect(20, 20, 600, 200);
+				function drawRect()
+				{
+					context.fillRect(20, 20, 600, 200);
+				}
+				updateColorStops(UPDATE_STEP.val());
+				drawRect();
 			}, INTERVAL_MS);
 		</script>
 	</body>
