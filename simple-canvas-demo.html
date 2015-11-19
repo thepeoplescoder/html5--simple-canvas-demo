@@ -3,43 +3,90 @@
 <html>
 	<head>
 		<title>Simple HTML5 Canvas demo</title>
+		<script src="https://code.jquery.com/jquery-1.11.1.min.js"></script>
 		<script>
+			// Overriding the default error handler just to show that it can be done.
+			// This is to assist in debugging scripts.
+			onerror = (function (globalObject, oldOnError)
+			{
+				return function (errMsg, scriptUrl, lineNumber, columnNumber, errObj)
+				{
+					// Build error message.
+					var message = "Error triggered.\n\n";
+					message += "Error: " + errMsg + "\n";
+					message += "URL of script: " + scriptUrl + "\n";
+					message += "Line " + lineNumber + ", Column " + columnNumber;
+
+					// Display the message.  We alert() it just in case
+					// if we forget to check the JS console.
+					console.log(message);
+					if (globalObject.alert)
+					{
+						globalObject.alert(message);
+					}
+
+					// Chain previous handler.  Basically "playing nice with others."
+					// Not really necessary here, but I'm just showing that it's possible.
+					if (oldOnError instanceof Function)
+					{
+						oldOnError(errMsg, scriptUrl, lineNumber, columnNumber, errObj);
+					}
+				}
+			})(this, onerror);
 
 			// A polyfill for a String.Format equivalent that I found on StackOverflow.
 			// I made a few modifications, but nevertheless, it does the same thing.
 			if (!String.prototype.fmt)
 			{
-				String.prototype.fmt = function()
+				String.prototype.fmt = (function ()
 				{
-					var args = arguments;
-					return this.replace(String.prototype.fmt.__regex, function(match, $$1)
+					var regex = /\{(\-?\d+)\}/g;
+					var negatives = [0, '{', '}'];
+
+					return function fmt()
 					{
-						var chosen = (+$$1 >= 0) ? args : String.prototype.fmt.__negatives;
-						$$1 = Math.abs($$1);
-						return typeof chosen[$$1] != "undefined" ? chosen[$$1] : match;
-					});
-				};
-				String.prototype.fmt.__regex = /\{(\-?\d+)\}/g;
-				String.prototype.fmt.__negatives = [undefined, '{', '}'];
+						var args = arguments;
+						return this.replace(regex, function(match, $$1)
+						{
+							var chosen = (+$$1 >= 0) ? args : negatives;
+							$$1 = Math.abs($$1);
+							return typeof chosen[$$1] != "undefined" ? chosen[$$1] : match;
+						});
+					};
+				})();
 			}
 
-			function setAndGetNumericProperty($this, propertyName, n, onChange)
+			/**
+			 * ConstrainedNumber class.
+			 *
+			 * Its purpose is to simply hold a number, and to
+			 * silently never let it fall out of bounds.
+			 */
+			function ConstrainedNumber(v, interval)
 			{
-				if (n !== undefined)
+				var temp, minval, maxval;
+
+				// Set locals if an interval is provided.
+				if (interval)
 				{
-					$this[propertyName] = +n;
-					onChange.call($this);
+					if (interval.hasOwnProperty("min"))
+					{
+						minval = +interval.min;
+					}
+					if (interval.hasOwnProperty("max"))
+					{
+						maxval = +interval.max;
+					}
+
+					// We don't need this reference anymore.
+					interval = null;
 				}
-				return $this[propertyName];
-			}
 
-			function ConstrainedNumber(v, minval, maxval)
-			{
-				var temp;
-
+				// Correct parameters by handling invalid values (such as NaN).
 				minval = +(minval || 0);
 				maxval = +(maxval || 0xFFFFFFFF);
 
+				// Swap on inconsistent values.
 				if (minval > maxval)
 				{
 					temp = minval;
@@ -47,13 +94,19 @@
 					maxval = minval;
 				}
 
+				// Since this is an immutable object, let's
+				// keep track of this ahead of time.
 				var rangeLength = maxval - minval;
 
+				// Private methods to allow read-only
+				// access to the variables of this closure.
 				this.min         = function () { return      minval; };
 				this.max         = function () { return      maxval; };
 				this.rangeLength = function () { return rangeLength; };
 
-				this.__value = minval;			// Guarantee initial value in range.
+				// This guarantees that the initial value
+				// is defined, and is always in range.
+				this.__value = minval;
 				this.val(v);
 			}
 
@@ -79,33 +132,7 @@
 			{
 				return this.min() <= n && n <= this.max();
 			};
-
-			// Overriding the default error handler just to show that it can be done.
-			// This is to assist in debugging scripts.
-			var oldOnError = onerror;
-			onerror = function (errMsg, scriptUrl, lineNumber, columnNumber, errObj)
-			{
-				// Build error message
-				var message = "Error triggered.\n\n";
-				message += "Error: {0}\n";
-				message += "URL of script: {1}\n";
-				message += "Line {2}, Column {3}";
-
-				// The polyfill we created earlier!
-				message = message.fmt(errMsg, scriptUrl, lineNumber, columnNumber);
-
-				console.log(message);
-				alert(message);				// Just in case if we forget to check the JS console :)
-
-				// Chain previous handler.  Basically "playing nice with others."
-				// Not really necessary here, but I'm just showing that it's possible.
-				if (oldOnError instanceof Function)
-				{
-					oldOnError(errMsg, scriptUrl, lineNumber, columnNumber, errObj);
-				}
-			};
 		</script>
-		<script src="https://code.jquery.com/jquery-1.11.1.min.js"></script>
 	</head>
 	<body>
 		<canvas id="mycanvas" width="640" height="240" style="float: left"></canvas>
@@ -123,8 +150,8 @@
 			$(canvas).css("margin-right", "15px");
 
 			var INTERVAL_MS = 1;
-			var UPDATE_STEP = 1;
-			var UPDATE_STEP = new ConstrainedNumber(1, 0, 128);
+			var COLOR_STEP = 1;
+			var UPDATE_STEP = new ConstrainedNumber(1, {min: 0, max: 128});
 
 			function rgb(r, g, b)
 			{
@@ -151,7 +178,7 @@
 			var selectors = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 			for (var sIndex = 0; sIndex < selectors.length; sIndex++)
 			{
-				for (var ii = 0; ii < 128; ii += 4)
+				for (var ii = 0; ii < 128; ii += COLOR_STEP)
 				{
 					cssColorNames.push(sameIntensity(selectors[sIndex], ii));
 				}
@@ -196,25 +223,17 @@
 			// Where the magic happens.
 			setInterval(function ()
 			{
-				function updateColorStops(inc)
+				if (UPDATE_STEP.val())
 				{
-					if (inc)
+					var gradient = context.createRadialGradient(320, 120, 0, 320, 120, 320);
+					context.fillStyle = gradient;
+					for (var key in colorStops)
 					{
-						var gradient = context.createRadialGradient(320, 120, 0, 320, 120, 320);
-						context.fillStyle = gradient;
-						for (var key in colorStops)
-						{
-							colorStops[key] = (colorStops[key] + inc) % MAX;
-							gradient.addColorStop(colorStops[key] / MAX, key);
-						}
+						colorStops[key] = (colorStops[key] + inc) % MAX;
+						gradient.addColorStop(colorStops[key] / MAX, key);
 					}
-				}
-				function drawRect()
-				{
 					context.fillRect(20, 20, 600, 200);
 				}
-				updateColorStops(UPDATE_STEP.val());
-				drawRect();
 			}, INTERVAL_MS);
 		</script>
 	</body>
